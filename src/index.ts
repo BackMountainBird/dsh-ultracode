@@ -121,15 +121,18 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
 
-  // Effort pin: registered at plugin load, so this listener is OUTER to the
-  // per-agent model-selection listener (installed at agent creation) and its
-  // post-`next()` override wins. Model-selection still owns provider/model;
-  // ultra owns the effort while active.
+  // Effort pin: prepend (cordis keeps one flat hook array per event; the
+  // chain runs array-head-first, i.e. head = outermost, whose post-`next()`
+  // override wins) guarantees this listener stays outside the per-agent
+  // model-selection listener installed at agent creation — which strips an
+  // inner listener's reasoningEffort and re-applies the session selection.
+  // Model-selection still owns provider/model; ultra owns the effort while
+  // active.
   ctx.on('agent/request', async ({ agent }, next) => {
     const resolved = await next()
     if (!foldUltra(agent.session.events)) return resolved
     return { ...resolved, reasoningEffort: effort }
-  })
+  }, true)
 
   // The command child activates only when a command registry is composed
   // (headless assemblies stay unaffected).
