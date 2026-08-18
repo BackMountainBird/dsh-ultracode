@@ -140,16 +140,17 @@ export function apply(ctx: Context, config: Config): void {
       input: { hint: '[off]' },
       handler: ({ agent, rawInput }) => {
         const off = rawInput.trim() === 'off'
-        const active = foldUltra(agent.session.events)
-        if (off === active) {
+        // The runtime already appended THIS execution's `command/run` — the
+        // committed state — before invoking the handler, so the pre-switch
+        // state is the fold over everything before that final event.
+        const was = foldUltra(agent.session.events, agent.session.events.length - 1)
+        if (off === was) {
           return {
             kind: 'success',
             text: off ? 'Ultra mode is already off.' : 'Ultra mode is already on. Use /ultra off to leave.',
           } as const
         }
-        // The runtime already appended this execution's `command/run` — the
-        // committed state — before invoking the handler; narrate the switch
-        // so the model learns it without waking the driver.
+        // Narrate the switch so the model learns it without waking the driver.
         agent.inject(notice(!off))
         return {
           kind: 'success',

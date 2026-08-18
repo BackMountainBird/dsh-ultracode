@@ -41,7 +41,8 @@
   },
   "scripts": {
     "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json"
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+    "verify": "node scripts/verify.mjs"
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "^4.0.1-rc.1",
