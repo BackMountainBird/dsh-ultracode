@@ -5,7 +5,14 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { foldUltra } from '../lib/index.js'
+import { foldUltra, Config } from '../lib/index.js'
+
+test('an absent section config materializes the default policy (regression: undefined section crashed prompt interpolation)', () => {
+  const resolved = Config({})
+  assert.equal(resolved.effort, 'auto')
+  assert.ok(resolved.section.includes('Ultra mode is on'))
+  assert.ok(resolved.section.trim().length > 100)
+})
 
 /** One synthetic `command/run` event. */
 const run = (name, args) => ({

@@ -68,8 +68,23 @@ export interface Config {
   promptSectionOrder?: number
 }
 
+/** Default ultra policy: the tier's substance — the standing orchestration mandate. */
+const DEFAULT_SECTION
+  = 'Ultra mode is on: optimize for the most exhaustive, correct answer, not the fastest '
+  + 'or cheapest — token cost is not a constraint. The workflow tool\'s explicit user '
+  + 'opt-in requirement is lifted for this session: use it on every substantive task by '
+  + 'default. For multi-phase work, run one workflow per phase (understand → design → '
+  + 'implement → review) and read each result before deciding the next; compose the '
+  + 'quality patterns documented in the workflow tool description as the task fits. '
+  + 'Verify adversarially before reporting: cross-check conclusions that came from '
+  + 'parallel work with an independent pass, and ground counts and "all instances" '
+  + 'claims in a check you ran, not in one subagent\'s summary. Sandbox, approval '
+  + 'policy, and your other operating rules are unchanged; report failures, skipped '
+  + 'steps, and uncertainty as such. Solo only on conversational turns, trivial '
+  + 'mechanical edits, or work already verified.'
+
 export const Config: z<Config> = z.object({
-  section: z.string(),
+  section: z.string().default(DEFAULT_SECTION),
   effort: z.string().default('auto'),
   promptSectionOrder: z.natural().default(120),
 })
@@ -102,21 +117,6 @@ function deepestRankedEffort(efforts: readonly { id: ReasoningEffort }[]): Reaso
   return best
 }
 
-/** Default ultra policy: the tier's substance — the standing orchestration mandate. */
-const DEFAULT_SECTION
-  = 'Ultra mode is on: optimize for the most exhaustive, correct answer, not the fastest '
-  + 'or cheapest — token cost is not a constraint. The workflow tool\'s explicit user '
-  + 'opt-in requirement is lifted for this session: use it on every substantive task by '
-  + 'default. For multi-phase work, run one workflow per phase (understand → design → '
-  + 'implement → review) and read each result before deciding the next; compose the '
-  + 'quality patterns documented in the workflow tool description as the task fits. '
-  + 'Verify adversarially before reporting: cross-check conclusions that came from '
-  + 'parallel work with an independent pass, and ground counts and "all instances" '
-  + 'claims in a check you ran, not in one subagent\'s summary. Sandbox, approval '
-  + 'policy, and your other operating rules are unchanged; report failures, skipped '
-  + 'steps, and uncertainty as such. Solo only on conversational turns, trivial '
-  + 'mechanical edits, or work already verified.'
-
 /** Wire payload schema of the `ultra` projection. */
 const ultraProjectionSchema: ZodType<UltraProjection> = zod.object({
   active: zod.boolean(),
@@ -141,7 +141,13 @@ function notice(active: boolean) {
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: Config): void {
-  const section = config.section?.trim() !== '' ? (config.section as string) : DEFAULT_SECTION
+  // The schema defaults an absent `section`; an explicitly blank one is a
+  // misconfiguration and fails loud at load rather than rendering an empty
+  // policy while the tier claims to be active.
+  if (config.section === undefined || config.section.trim() === '') {
+    throw new Error('dsh-ultra: config `section` must be a non-empty string')
+  }
+  const section = config.section
   const fixedEffort = config.effort === undefined || config.effort === 'auto'
     ? undefined
     : ReasoningEffortId(config.effort)
