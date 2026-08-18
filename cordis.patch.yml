@@ -12,7 +12,8 @@
       # `name`.
       name: dsh-ultra
       config:
-        # Adapter-owned reasoning effort pinned on every model request while
-        # ultra mode is active. Must be one of the serving adapter's declared
-        # efforts; an unsupported value fails loud at request assembly.
-        effort: max
+        # `auto` pins each request to the deepest effort the serving model
+        # declares (max on DeepSeek, high on GLM/Kimi routes that stop there);
+        # a literal value must be one of the serving adapter's declared
+        # efforts and fails loud otherwise.
+        effort: auto

@@ -26,7 +26,7 @@ The local install stays linked to the checkout: rebuild with `pnpm run build` af
 | Field | Default | Meaning |
 |---|---|---|
 | `section` | built-in policy text | Rendered as the `ultra:policy` prompt section while active |
-| `effort` | `max` | Adapter-owned reasoning effort pinned while active; must be one of the serving adapter's declared efforts (fails loud otherwise) |
+| `effort` | `auto` | Effort pinned while active: `auto` resolves each request to the deepest effort the serving model declares (`max` on DeepSeek, `high` on GLM/Kimi routes); a literal value must be one of the serving adapter's declared efforts (fails loud otherwise) |
 | `promptSectionOrder` | `120` | Prompt-section order |
 
 ## Development

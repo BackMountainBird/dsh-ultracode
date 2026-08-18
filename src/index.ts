@@ -25,8 +25,8 @@
 
 import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
-import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 import type { ReasoningEffortId as ReasoningEffort } from '@deepseek-ai/dsh-llm'
+import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 // Declaration merge only: pulls the Events map ('agent/request') and the
 // AssembleContext { agent } merge.
 import type {} from '@deepseek-ai/dsh-agent'
@@ -45,7 +45,7 @@ export { foldUltra } from './ultra-types.ts'
 
 export const name = 'dsh-ultra'
 
-export const inject = ['systemPrompt']
+export const inject = ['systemPrompt', 'llm']
 
 /** Plugin configuration. */
 export interface Config {
@@ -55,9 +55,13 @@ export interface Config {
    */
   section?: string
   /**
-   * Adapter-owned reasoning effort pinned on every request while ultra mode
-   * is active. Must be one of the serving adapter's declared efforts; an
-   * unsupported value fails loud at request assembly (default `max`).
+   * Reasoning effort pinned on every request while ultra mode is active:
+   * `auto` (default) resolves each request to the deepest effort the serving
+   * model declares under the well-known `off|low|medium|high|xhigh|max`
+   * vocabulary (`max` on DeepSeek, `high` on GLM/Kimi routes that stop there;
+   * a model declaring nothing above `off` is left unpinned). Any other value
+   * pins literally and must be one of the serving adapter's declared efforts
+   * — an unsupported value fails loud at request assembly.
    */
   effort?: string
   /** Prompt-section order for the policy (default `120`). */
@@ -66,9 +70,37 @@ export interface Config {
 
 export const Config: z<Config> = z.object({
   section: z.string(),
-  effort: z.string().default('max'),
+  effort: z.string().default('auto'),
   promptSectionOrder: z.natural().default(120),
 })
+
+/**
+ * Well-known effort spellings, shallowest to deepest. Both shipped adapters
+ * (llm-deepseek, llm-pi-ai) draw their effort ids from this vocabulary, so
+ * `auto` can rank a model's declared set; ids outside it are opaque and
+ * never guessed.
+ */
+const EFFORT_RANK: readonly string[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The deepest declared effort worth pinning, or `undefined` when the set has
+ * no ranked entry above `off` (pinning `off` would disable reasoning — the
+ * opposite of ultra — and unranked ids are not guessed).
+ * @param efforts - the serving model's declared efforts, display order.
+ * @returns the effort id to pin, or undefined to leave the request unpinned.
+ */
+function deepestRankedEffort(efforts: readonly { id: ReasoningEffort }[]): ReasoningEffort | undefined {
+  let best: ReasoningEffort | undefined
+  let bestRank = 0
+  for (const effort of efforts) {
+    const rank = EFFORT_RANK.indexOf(effort.id)
+    if (rank > bestRank) {
+      best = effort.id
+      bestRank = rank
+    }
+  }
+  return best
+}
 
 /** Default ultra policy: the tier's substance — the standing orchestration mandate. */
 const DEFAULT_SECTION
@@ -110,7 +142,9 @@ function notice(active: boolean) {
  */
 export function apply(ctx: Context, config: Config): void {
   const section = config.section?.trim() !== '' ? (config.section as string) : DEFAULT_SECTION
-  const effort: ReasoningEffort = ReasoningEffortId(config.effort ?? 'max')
+  const fixedEffort = config.effort === undefined || config.effort === 'auto'
+    ? undefined
+    : ReasoningEffortId(config.effort)
 
   ctx.systemPrompt.section({
     name: 'ultra:policy',
@@ -127,11 +161,17 @@ export function apply(ctx: Context, config: Config): void {
   // model-selection listener installed at agent creation — which strips an
   // inner listener's reasoningEffort and re-applies the session selection.
   // Model-selection still owns provider/model; ultra owns the effort while
-  // active.
-  ctx.on('agent/request', async ({ agent }, next) => {
+  // active. A fixed config value pins literally; `auto` resolves each
+  // request against the serving model's declared efforts, so the same
+  // profile serves DeepSeek (`max`) and GLM/Kimi (`high`) routes.
+  ctx.on('agent/request', async ({ agent, signal }, next) => {
     const resolved = await next()
     if (!foldUltra(agent.session.events)) return resolved
-    return { ...resolved, reasoningEffort: effort }
+    if (fixedEffort !== undefined) return { ...resolved, reasoningEffort: fixedEffort }
+    const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model, signal)
+    const efforts = info.reasoning?.efforts
+    const deepest = efforts === undefined ? undefined : deepestRankedEffort(efforts)
+    return deepest === undefined ? resolved : { ...resolved, reasoningEffort: deepest }
   }, true)
 
   // The command child activates only when a command registry is composed
