@@ -1,0 +1,18 @@
+# dsh-ultra bundle patch: mounts the ultra-mode plugin into the host
+# composition of a dsh profile. The plugin registers the /ultra command and
+# the `ultra:policy` system-prompt section into the shared registries, so
+# every session of the profile can switch ultra mode on or off.
+#
+# Install: `dsh plugin --profile <name> add <this package>` (npm or a local
+# path). The `dsh plugin` command pnpm-installs the package into the profile
+# and reconciles it into the profile's `dsh.profile.bundles` layer list.
+- insert:
+    - id: dsh-ultra
+      # Node-resolvable package name — must stay in sync with package.json
+      # `name`.
+      name: dsh-ultra
+      config:
+        # Adapter-owned reasoning effort pinned on every model request while
+        # ultra mode is active. Must be one of the serving adapter's declared
+        # efforts; an unsupported value fails loud at request assembly.
+        effort: max
