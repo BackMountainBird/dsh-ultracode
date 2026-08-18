@@ -8,14 +8,14 @@
     "node": "^22.19.0 || >=24"
   },
   "main": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "types": "lib/types/index.d.ts",
   "exports": {
     ".": {
-      "types": "./lib/index.d.ts",
+      "types": "./lib/types/index.d.ts",
       "default": "./lib/index.js"
     },
     "./client": {
-      "types": "./lib/client.d.ts",
+      "types": "./lib/types/client/index.d.ts",
       "default": "./lib/client.js"
     },
     "./cordis.patch.yml": "./cordis.patch.yml",
@@ -40,8 +40,8 @@
     }
   },
   "scripts": {
-    "build": "tsdown",
-    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.client.json",
+    "build": "tsc -p tsconfig.json && tsc -p tsconfig.client.json && tsdown",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.client.json --noEmit",
     "verify": "node scripts/verify.mjs"
   },
   "peerDependencies": {
