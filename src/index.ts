@@ -38,7 +38,7 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
-import { foldUltra, type UltraProjection } from './ultra-types.ts'
+import { foldUltra, deepestRankedEffort, type UltraProjection } from './ultra-types.ts'
 
 export type { UltraProjection } from './ultra-types.ts'
 export { foldUltra } from './ultra-types.ts'
@@ -90,34 +90,6 @@ export const Config: z<Config> = z.object({
   effort: z.string().default('auto'),
   promptSectionOrder: z.natural().default(120),
 })
-
-/**
- * Well-known effort spellings, shallowest to deepest. Both shipped adapters
- * (llm-deepseek, llm-pi-ai) draw their effort ids from this vocabulary, so
- * `auto` can rank a model's declared set; ids outside it are opaque and
- * never guessed.
- */
-const EFFORT_RANK: readonly string[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
-
-/**
- * The deepest declared effort worth pinning, or `undefined` when the set has
- * no ranked entry above `off` (pinning `off` would disable reasoning — the
- * opposite of ultra — and unranked ids are not guessed).
- * @param efforts - the serving model's declared efforts, display order.
- * @returns the effort id to pin, or undefined to leave the request unpinned.
- */
-function deepestRankedEffort(efforts: readonly { id: ReasoningEffort }[]): ReasoningEffort | undefined {
-  let best: ReasoningEffort | undefined
-  let bestRank = 0
-  for (const effort of efforts) {
-    const rank = EFFORT_RANK.indexOf(effort.id)
-    if (rank > bestRank) {
-      best = effort.id
-      bestRank = rank
-    }
-  }
-  return best
-}
 
 /** Wire payload schema of the `ultra` projection. */
 const ultraProjectionSchema: ZodType<UltraProjection> = zod.object({
@@ -179,7 +151,7 @@ export function apply(ctx: Context, config: Config): void {
     const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model, signal)
     const efforts = info.reasoning?.efforts
     const deepest = efforts === undefined ? undefined : deepestRankedEffort(efforts)
-    return deepest === undefined ? resolved : { ...resolved, reasoningEffort: deepest }
+    return deepest === undefined ? resolved : { ...resolved, reasoningEffort: ReasoningEffortId(deepest) }
   }, true)
 
   // The command child activates only when a command registry is composed

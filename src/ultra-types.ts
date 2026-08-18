@@ -31,6 +31,34 @@ declare module '@deepseek-ai/dsh-session-projection/types' {
 }
 
 /**
+ * Well-known effort spellings, shallowest to deepest. Both shipped adapters
+ * (llm-deepseek, llm-pi-ai) draw their effort ids from this vocabulary, so
+ * tier logic can rank a model's declared set; ids outside it are opaque and
+ * never guessed.
+ */
+export const EFFORT_RANK: readonly string[] = ['off', 'low', 'medium', 'high', 'xhigh', 'max']
+
+/**
+ * The deepest declared effort worth pinning, or `undefined` when the set has
+ * no ranked entry above `off` (pinning `off` would disable reasoning — the
+ * opposite of ultra — and unranked ids are not guessed).
+ * @param efforts - one model's declared efforts, any order.
+ * @returns the effort id to pin, or undefined to leave selection unpinned.
+ */
+export function deepestRankedEffort(efforts: readonly { id: string }[]): string | undefined {
+  let best: string | undefined
+  let bestRank = 0
+  for (const effort of efforts) {
+    const rank = EFFORT_RANK.indexOf(effort.id)
+    if (rank > bestRank) {
+      best = effort.id
+      bestRank = rank
+    }
+  }
+  return best
+}
+
+/**
  * Whether ultra mode is in force. The last `command/run` of an `ultra`
  * command wins; a prefix with none is inactive.
  *

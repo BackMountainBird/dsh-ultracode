@@ -11,7 +11,8 @@
  * @module dsh-ultra/client
  */
 
-import type { ClientContext, SessionId } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ClientContext, SessionId, SessionRuntime } from '@deepseek-ai/dsh-client-runtime/client'
+import type { ConnectionHandle, IApiClient, SessionModels } from '@deepseek-ai/dsh-api-remotes/client'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.right seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-slots LocaleNamespaceMap merge surface.
@@ -20,6 +21,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-slots'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import { UltraChip } from './UltraChip.tsx'
 import { en, zh, type UltraKey } from './locales.ts'
+import { deepestRankedEffort } from '../ultra-types.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -41,8 +43,47 @@ export interface UltraChipInjected {
   toggle: (off: boolean) => Promise<string | null>
 }
 
-/** Required services: the seat's slot registry, commands Remote, and locale registry. */
-export const inject = ['slots', 'remote', 'remote.commands', 'locale']
+/** Required services: slots, commands Remote, locale, and the session model API. */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale', 'connection', 'sessions']
+
+/** The session wire face the effort sync uses. */
+type SessionsWire = Pick<IApiClient['sessions'], 'models' | 'selectModel'>
+
+/**
+ * Mirror the ultra effort pin in the session's own model selection, so the
+ * native effort picker shows the tier actually in force instead of the last
+ * manual pick. On switch the selection re-submits with the deepest effort the
+ * serving model declares; on exit it re-submits without one, restoring the
+ * provider default. The request-side pin remains the guarantee — this is
+ * display consistency, best-effort after the switch itself.
+ * @param ctx - client root context.
+ * @param sessionId - the toggled session.
+ * @param off - whether ultra mode was just switched off.
+ */
+async function syncSelectionEffort(ctx: ClientContext, sessionId: SessionId, off: boolean): Promise<void> {
+  const sessions = ctx.get('sessions') as SessionRuntime
+  if (sessions.subagentAddress(sessionId) !== undefined) return
+  const connection = ctx.get('connection') as ConnectionHandle
+  const wire = connection.api.sessions as SessionsWire
+  const { result } = await wire.models({ sessionId })
+  if (!result.ok) throw new Error(`session.models failed: ${result.error.code}: ${result.error.message}`)
+  const current = result.value.current as SessionModels['current']
+  if (current === null || current === undefined) return
+  const efforts = result.value.groups
+    .filter(group => group.id === current.provider)
+    .flatMap(group => group.models)
+    .find(model => model.id === current.model)?.reasoning?.efforts
+  const deepest = off || efforts === undefined ? undefined : deepestRankedEffort(efforts)
+  const { result: selected } = await wire.selectModel({
+    sessionId,
+    provider: current.provider,
+    model: current.model,
+    ...deepest === undefined ? {} : { reasoningEffort: deepest },
+  })
+  if (!selected.ok) {
+    throw new Error(`session.selectModel failed: ${selected.error.code}: ${selected.error.message}`)
+  }
+}
 
 /**
  * Client plugin body: register the ULTRA chip over the command channel and
@@ -68,6 +109,11 @@ export function apply(ctx: ClientContext): void {
         const result = await ctx.remote.commands.execute(sessionId, off ? '/ultra off' : '/ultra')
         if (!result.ok) return `${result.error.message} (${result.error.code})`
         if (result.value === undefined) return 'unknown command: /ultra'
+        try {
+          await syncSelectionEffort(ctx, sessionId, off)
+        } catch (error: unknown) {
+          return `ultra switched, but the effort picker sync failed: ${error instanceof Error ? error.message : String(error)}`
+        }
         return null
       },
     }),

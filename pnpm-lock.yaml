@@ -18,6 +18,9 @@ importers:
       '@deepseek-ai/dsh-agent':
         specifier: 0.1.0-rc.7
         version: 0.1.0-rc.7(e29662b86d9f2dfd15e7f992d93a207e)
+      '@deepseek-ai/dsh-api-remotes':
+        specifier: 0.1.0-rc.7
+        version: 0.1.0-rc.7(57529afa7ef3499ba490c4a733948efd)
       '@deepseek-ai/dsh-client-locale':
         specifier: 0.1.0-rc.7
         version: 0.1.0-rc.7(33af7fdd7f8682541702eb80d696cb7c)
