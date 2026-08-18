@@ -165,9 +165,11 @@ export function apply(ctx: Context, config: Config): void {
         const off = rawInput.trim() === 'off'
         // The runtime already appended THIS execution's `command/run` — the
         // committed state — before invoking the handler, so the pre-switch
-        // state is the fold over everything before that final event.
+        // state is the fold over everything before that final event. The
+        // idempotence check compares the REQUESTED target (!off) with that
+        // pre-switch state.
         const was = foldUltra(agent.session.events, agent.session.events.length - 1)
-        if (off === was) {
+        if (!off === was) {
           return {
             kind: 'success',
             text: off ? 'Ultra mode is already off.' : 'Ultra mode is already on. Use /ultra off to leave.',

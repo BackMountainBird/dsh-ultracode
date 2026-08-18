@@ -48,3 +48,12 @@ test('the end bound excludes the event at that index (pre-switch state)', () => 
 test('an empty log folds inactive', () => {
   assert.equal(foldUltra([]), false)
 })
+
+test('the pre-switch fold excludes the last command only (idempotence base)', () => {
+  // A genuine switch: ON when the log was OFF — pre-switch fold must be false,
+  // so the handler announces a switch (not "already on") and narrates.
+  const events = [run('ultra', 'off'), run('ultra', '')]
+  assert.equal(foldUltra(events, events.length - 1), false)
+  // A repeat: ON when the log already ended ON — pre-switch fold is true.
+  assert.equal(foldUltra([run('ultra', '')], 1), true)
+})
