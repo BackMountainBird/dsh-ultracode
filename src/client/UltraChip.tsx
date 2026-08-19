@@ -37,12 +37,15 @@ export function UltraChip({ useProjection, toggle, t }: UltraChipProps) {
 
   // Rainbow border: mark this composer card while ultra is active. The chip
   // sits inside the card, so the closest() walk stays under the same seat's
-  // DOM; the global stylesheet renders the marker.
+  // DOM; the global stylesheet renders the marker. Cleanup clears the marker
+  // so an unmount while active (session switch) cannot leak it onto a card
+  // this chip no longer occupies.
   useEffect(() => {
     const card = hostRef.current?.closest('[data-composer-card]')
     if (card === null || card === undefined) return
     if (active) card.setAttribute('data-dsh-ultra', 'on')
     else card.removeAttribute('data-dsh-ultra')
+    return () => { card.removeAttribute('data-dsh-ultra') }
   }, [active])
 
   if (ultra === undefined) return null
@@ -66,9 +69,10 @@ export function UltraChip({ useProjection, toggle, t }: UltraChipProps) {
       <button
         type="button"
         className="dsh-ultra-chip"
-        data-state={active ? 'on' : busy ? 'busy' : 'off'}
+        data-state={busy ? 'busy' : active ? 'on' : 'off'}
         aria-label={active ? t('chip.on.aria') : t('chip.off.aria')}
         title={active ? t('chip.on.title') : t('chip.off.title')}
+        disabled={busy}
         onClick={() => { switchTo(active) }}
       >
         {active ? 'ULTRA' : t('chip.off.label')}

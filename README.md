@@ -2,7 +2,7 @@
 
 Ultra mode for [DeepSeek Harness](https://github.com/deepseek-harness) — a per-session effort tier, installed as an out-of-tree plugin bundle.
 
-While active, every model request of the session is pinned to the configured reasoning effort (default `max`) and a deployment-owned orchestration-policy section rides the system prompt: workflow fan-out by default on substantive tasks, adversarial verification before reporting, context hygiene. Modeled on Claude Code's `ultracode` tier — the tier's substance is the standing orchestration policy, not a deeper reasoning parameter.
+While active, every model request of the session is pinned to the configured reasoning effort (default `auto`: the deepest effort the serving model declares) and a deployment-owned orchestration-policy section rides the system prompt: workflow fan-out by default on substantive tasks, adversarial verification before reporting, context hygiene. Modeled on Claude Code's `ultracode` tier — the tier's substance is the standing orchestration policy, not a deeper reasoning parameter.
 
 - `/ultra` — switch the current session to ultra mode
 - `/ultra off` — leave it

@@ -41,7 +41,7 @@ import type { ZodType } from 'zod'
 import { foldUltra, deepestRankedEffort, type UltraProjection } from './ultra-types.ts'
 
 export type { UltraProjection } from './ultra-types.ts'
-export { foldUltra } from './ultra-types.ts'
+export { foldUltra, deepestRankedEffort, EFFORT_RANK } from './ultra-types.ts'
 
 export const name = 'dsh-ultra'
 

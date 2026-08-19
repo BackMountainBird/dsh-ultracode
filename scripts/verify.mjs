@@ -5,7 +5,22 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { foldUltra, Config } from '../lib/index.js'
+import { foldUltra, Config, deepestRankedEffort } from '../lib/index.js'
+
+test('deepestRankedEffort picks the deepest entry under the known vocabulary', () => {
+  const ids = list => list.map(id => ({ id }))
+  // DeepSeek shape: max wins.
+  assert.equal(deepestRankedEffort(ids(['off', 'low', 'high', 'max'])), 'max')
+  // GLM/Kimi shape: stops at high.
+  assert.equal(deepestRankedEffort(ids(['off', 'low', 'medium', 'high'])), 'high')
+  // Display order is not depth order; rank must not depend on position.
+  assert.equal(deepestRankedEffort(ids(['high', 'off', 'medium', 'low'])), 'high')
+  // Unranked spellings are never guessed, even alone.
+  assert.equal(deepestRankedEffort(ids(['turbo'])), undefined)
+  // `off` alone is not worth pinning (pinning off would disable reasoning).
+  assert.equal(deepestRankedEffort(ids(['off'])), undefined)
+  assert.equal(deepestRankedEffort([]), undefined)
+})
 
 test('an absent section config materializes the default policy (regression: undefined section crashed prompt interpolation)', () => {
   const resolved = Config({})
