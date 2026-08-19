@@ -87,22 +87,30 @@ export interface ChainNode {
   /** Subagent parent (delegation lineage), or a fork seed parent — see `depth`. */
   readonly parent?: string
   /**
-   * Delegation depth: zero for top-level and fork sessions (a fork inherits
-   * through its seeded prefix, NOT through the live parent — a later parent
-   * switch must not reach an already-spawned branch), positive for subagent
-   * children (the chain walk applies).
+   * Delegation depth: zero for top-level sessions, parent depth + 1 for every
+   * subagent child — including forks, because the shared in-process driver
+   * stamps depth on all children regardless of provider. Depth alone therefore
+   * cannot distinguish a fork from a spawn child; `seedLength` does.
    */
   readonly depth: number
+  /**
+   * Present only on seeded children (forks — the driver stamps it when the
+   * creation carried a seed). A fork inherits through its seeded prefix, NOT
+   * through the live parent: a later parent switch must not reach an
+   * already-spawned branch. `undefined` marks a spawn child (fresh log), the
+   * only kind that walks the live chain.
+   */
+  readonly seedLength?: number
 }
 
 /**
  * The effective ultra state of one session: its own folded state, then — for
- * subagent children only (positive depth) — the parent's, walking up the
- * delegation chain. Forks stop at their own seed (depth zero); cycles are
- * guarded; a disposed (unresolvable) parent ends the walk without inheriting.
- * Inheritance only ever adds: a child cannot opt out, because the command
- * surface targets main sessions only. Matches Claude Code's "omit to inherit
- * the session effort" default for spawned workers.
+ * spawn children only (positive depth, no seed) — the parent's, walking up
+ * the delegation chain. Forks (seeded children) stop at their own fold;
+ * cycles are guarded; a disposed (unresolvable) parent ends the walk without
+ * inheriting. Inheritance only ever adds: a child cannot opt out, because the
+ * command surface targets main sessions only. Matches Claude Code's "omit to
+ * inherit the session effort" default for spawned workers.
  *
  * @param start The requesting session as a chain node.
  * @param resolve Looks up another live session by id; undefined ends the walk.
@@ -114,7 +122,7 @@ export function chainUltra(start: ChainNode, resolve: (id: string) => ChainNode 
   while (current !== undefined && !seen.has(current.id)) {
     seen.add(current.id)
     if (foldUltra(current.events)) return true
-    if (current.parent === undefined || current.depth <= 0) return false
+    if (current.parent === undefined || current.depth <= 0 || current.seedLength !== undefined) return false
     current = resolve(current.parent)
   }
   return false

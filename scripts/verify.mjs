@@ -10,24 +10,32 @@ import { foldUltra, chainUltra, deepestRankedEffort, Config } from '../lib/index
 test('chainUltra: subagent children inherit, forks stop at their own seed', () => {
   const on = [run('ultra', '')]
   const off = [run('ultra', 'off')]
-  const node = (id, events, parent, depth) => ({ id, events, parent, depth })
+  // Real shapes: the shared driver stamps depth on EVERY subagent child;
+  // only seeded children (forks) carry seedLength. Spawn children have none.
+  const spawn = (id, events, parent, depth) => ({ id, events, parent, depth })
+  const fork = (id, events, parent, depth, seedLength) => ({ id, events, parent, depth, seedLength })
   const resolve = table => id => table.get(id)
-  // Subagent (depth 1) of an ultra-on parent inherits.
-  assert.equal(chainUltra(node('child', [], 'parent', 1), resolve(new Map([['parent', node('parent', on)]]))), true)
-  // Subagent of a plain parent does not.
-  assert.equal(chainUltra(node('child', [], 'parent', 1), resolve(new Map([['parent', node('parent', off)]]))), false)
-  // Two-level delegation walks to the grandparent.
+  // Spawn child (depth 1, no seed) of an ultra-on parent inherits.
+  assert.equal(chainUltra(spawn('child', [], 'parent', 1), resolve(new Map([['parent', spawn('parent', on)]]))), true)
+  // Spawn child of a plain parent does not.
+  assert.equal(chainUltra(spawn('child', [], 'parent', 1), resolve(new Map([['parent', spawn('parent', off)]]))), false)
+  // Two-level spawn delegation walks to the grandparent.
   const deep = new Map([
-    ['mid', node('mid', [], 'root', 1)],
-    ['root', node('root', on)],
+    ['mid', spawn('mid', [], 'root', 1)],
+    ['root', spawn('root', on)],
   ])
-  assert.equal(chainUltra(node('leaf', [], 'mid', 2), resolve(deep)), true)
-  // A fork (depth 0) never consults its seed parent, even an ultra-on one.
-  assert.equal(chainUltra(node('fork', [], 'parent', 0), resolve(new Map([['parent', node('parent', on)]]))), false)
+  assert.equal(chainUltra(spawn('leaf', [], 'mid', 2), resolve(deep)), true)
+  // A REAL fork (depth 1, seeded — the driver's actual stamping) never
+  // consults the live parent, even an ultra-on one or a later switch-on:
+  // seeded children inherit only through their frozen prefix.
+  assert.equal(chainUltra(fork('fork', [], 'parent', 1, 120), resolve(new Map([['parent', spawn('parent', on)]]))), false)
+  assert.equal(chainUltra(fork('fork', off, 'parent', 1, 120), resolve(new Map([['parent', spawn('parent', on)]]))), false)
+  // A fork seeded from an ultra-on parent folds on by itself and freezes.
+  assert.equal(chainUltra(fork('fork', on, 'parent', 1, 120), resolve(new Map([['parent', spawn('parent', off)]]))), true)
   // A disposed parent (unresolvable) ends the walk without inheriting.
-  assert.equal(chainUltra(node('child', [], 'gone', 1), resolve(new Map())), false)
+  assert.equal(chainUltra(spawn('child', [], 'gone', 1), resolve(new Map())), false)
   // A malformed cyclic lineage terminates instead of looping.
-  assert.equal(chainUltra(node('a', [], 'b', 1), resolve(new Map([['b', node('b', [], 'a', 1)]]))), false)
+  assert.equal(chainUltra(spawn('a', [], 'b', 1), resolve(new Map([['b', spawn('b', [], 'a', 1)]]))), false)
 })
 
 test('deepestRankedEffort picks the deepest entry under the known vocabulary', () => {

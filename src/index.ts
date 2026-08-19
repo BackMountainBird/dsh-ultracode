@@ -119,6 +119,7 @@ function chainNodeOf(session: Session): ChainNode {
     events: session.events,
     parent: session.header.parentSession as string | undefined,
     depth: session.header.delegationDepth ?? 0,
+    ...session.header.seedLength === undefined ? {} : { seedLength: session.header.seedLength },
   }
 }
 
