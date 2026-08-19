@@ -37,4 +37,4 @@ pnpm run typecheck
 pnpm run build
 ```
 
-Host plugin in `src/` (command, effort pin via the `agent/request` waterfall, prompt section, session projection); browser half in `src/client/` (composer chip via the `conversation.input.right` seat, rainbow stylesheet). Pinned against `@deepseek-ai/dsh-*@0.1.0-rc.7`.
+Host plugin in `src/` (command, effort pin via the `agent/request` waterfall, prompt section, session projection); browser half in `src/client/` (composer chip via the `conversation.input.right` seat, rainbow stylesheet). Peer floors are `@deepseek-ai/dsh-*@^0.1.0-rc.6` (both type faces compile against rc.6, the npm `latest`); devDependencies pin the floor so development cannot drift onto newer-only APIs.
