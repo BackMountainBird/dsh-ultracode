@@ -9,7 +9,7 @@
  * builds, so the plugin defines no event type of its own. The last
  * `/ultra` command wins: `/ultra` or `/ultra on` activates, `/ultra off`
  * deactivates.
- * @module dsh-ultra/ultra-types
+ * @module dsh-ultracode/ultra-types
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'

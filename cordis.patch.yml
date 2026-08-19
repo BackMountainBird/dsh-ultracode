@@ -1,4 +1,4 @@
-# dsh-ultra bundle patch: mounts the ultra-mode plugin into the host
+# dsh-ultracode bundle patch: mounts the ultra-mode plugin into the host
 # composition of a dsh profile. The plugin registers the /ultra command and
 # the `ultra:policy` system-prompt section into the shared registries, so
 # every session of the profile can switch ultra mode on or off.
@@ -7,10 +7,10 @@
 # path). The `dsh plugin` command pnpm-installs the package into the profile
 # and reconciles it into the profile's `dsh.profile.bundles` layer list.
 - insert:
-    - id: dsh-ultra
+    - id: dsh-ultracode
       # Node-resolvable package name — must stay in sync with package.json
       # `name`.
-      name: dsh-ultra
+      name: dsh-ultracode
       config:
         # `auto` pins each request to the deepest effort the serving model
         # declares (max on DeepSeek, high on GLM/Kimi routes that stop there);

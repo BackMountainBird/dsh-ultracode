@@ -1,6 +1,6 @@
 /**
  * The composer ULTRA chip's dictionary keys (namespace `ultra`).
- * @module dsh-ultra/client/locales
+ * @module dsh-ultracode/client/locales
  */
 
 /** Locale keys owned by the `ultra` namespace. */

@@ -20,7 +20,7 @@
  * Mounting is host-plane: the command registers globally, the section into
  * the shared registry, so the plugin needs no per-agent realm.
  *
- * @module dsh-ultra
+ * @module dsh-ultracode
  */
 
 import type { Context } from '@deepseek-ai/cordis'
@@ -47,7 +47,7 @@ import { foldUltra, chainUltra, deepestRankedEffort, type ChainNode, type UltraP
 export type { UltraProjection } from './ultra-types.ts'
 export { foldUltra, chainUltra, deepestRankedEffort, EFFORT_RANK } from './ultra-types.ts'
 
-export const name = 'dsh-ultra'
+export const name = 'dsh-ultracode'
 
 export const inject = ['systemPrompt', 'llm', 'sessions']
 
@@ -108,7 +108,7 @@ function notice(active: boolean) {
   return createUserMessage({
     content: [{ type: 'text', text }],
     // The notice is already one sentence, so it is its own summary.
-    source: { kind: 'plugin', plugin: 'dsh-ultra', form: 'notice', summary: text },
+    source: { kind: 'plugin', plugin: 'dsh-ultracode', form: 'notice', summary: text },
   })
 }
 
@@ -150,7 +150,7 @@ export function apply(ctx: Context, config: Config): void {
   // misconfiguration and fails loud at load rather than rendering an empty
   // policy while the tier claims to be active.
   if (config.section === undefined || config.section.trim() === '') {
-    throw new Error('dsh-ultra: config `section` must be a non-empty string')
+    throw new Error('dsh-ultracode: config `section` must be a non-empty string')
   }
   const section = config.section
   const fixedEffort = config.effort === undefined || config.effort === 'auto'

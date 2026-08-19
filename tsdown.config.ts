@@ -1,5 +1,5 @@
 /**
- * Browser client bundle for dsh-ultra, mirroring the DeepSeek Harness
+ * Browser client bundle for dsh-ultracode, mirroring the DeepSeek Harness
  * `clientBundle` protocol (packages/client/tsdown.client.ts):
  *
  * - CJS closure-factory artifact: `window.__ModuleLoader__.load({ id,

@@ -1,7 +1,7 @@
 /**
  * Offline self-check: foldUltra semantics over synthetic session logs.
  * Run with `node scripts/verify.mjs` (zero dependencies).
- * @module dsh-ultra/verify
+ * @module dsh-ultracode/verify
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'

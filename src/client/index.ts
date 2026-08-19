@@ -5,10 +5,10 @@
  * ULTRA chip: off-state offers the tier, on-state executes `/ultra off`.
  * State rides the host-computed `ultra` projection through the standard-kit
  * `useProjection` (zero client-side ultra state), and while active the
- * composer card (`[data-composer-card]`) carries `data-dsh-ultra='on'`,
+ * composer card (`[data-composer-card]`) carries `data-dsh-ultracode='on'`,
  * which the injected global stylesheet renders as an animated rainbow
  * border — static under `prefers-reduced-motion`.
- * @module dsh-ultra/client
+ * @module dsh-ultracode/client
  */
 
 import type { ClientContext, SessionId, SessionRuntime } from '@deepseek-ai/dsh-client-runtime/client'
@@ -91,17 +91,17 @@ async function syncSelectionEffort(ctx: ClientContext, sessionId: SessionId, off
  * @param ctx - client root context.
  */
 export function apply(ctx: ClientContext): void {
-  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ultra: dictionaries')
+  ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'dsh-ultracode: dictionaries')
 
   const style = document.createElement('style')
   style.dataset.dshUltra = ''
   style.textContent = RAINBOW_CSS
   document.head.append(style)
-  ctx.effect(() => () => { style.remove() }, 'dsh-ultra: rainbow stylesheet')
+  ctx.effect(() => () => { style.remove() }, 'dsh-ultracode: rainbow stylesheet')
 
   ctx.slots.inject('conversation.input.right', () => ctx.slots.register({
     name: 'conversation.input.right',
-    id: 'dsh-ultra',
+    id: 'dsh-ultracode',
     locale: NS,
     inject: (sessionId: SessionId): UltraChipInjected => ({
       // Failure strings stay English (error-surface policy: not localized).
@@ -122,27 +122,27 @@ export function apply(ctx: ClientContext): void {
 
 /** Rainbow composer border + chip skin; animation opt-out under reduced motion. */
 const RAINBOW_CSS = [
-  '@property --dsh-ultra-angle { syntax: \'<angle>\'; initial-value: 0deg; inherits: false; }',
-  '[data-composer-card][data-dsh-ultra=\'on\'] { position: relative; }',
+  '@property --dsh-ultracode-angle { syntax: \'<angle>\'; initial-value: 0deg; inherits: false; }',
+  '[data-composer-card][data-dsh-ultracode=\'on\'] { position: relative; }',
   [
-    '[data-composer-card][data-dsh-ultra=\'on\']::after {',
+    '[data-composer-card][data-dsh-ultracode=\'on\']::after {',
     '  content: \'\';',
     '  position: absolute;',
     '  inset: -2px;',
     '  border-radius: inherit;',
     '  padding: 2px;',
-    '  background: conic-gradient(from var(--dsh-ultra-angle), #ff5f6d, #ffc371, #47ffb1, #5b8cff, #b15cff, #ff5f6d);',
+    '  background: conic-gradient(from var(--dsh-ultracode-angle), #ff5f6d, #ffc371, #47ffb1, #5b8cff, #b15cff, #ff5f6d);',
     '  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);',
     '  -webkit-mask-composite: xor;',
     '  mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);',
     '  mask-composite: exclude;',
     '  pointer-events: none;',
-    '  animation: dsh-ultra-spin 2.5s linear infinite;',
+    '  animation: dsh-ultracode-spin 2.5s linear infinite;',
     '}',
   ].join('\n'),
-  '@keyframes dsh-ultra-spin { to { --dsh-ultra-angle: 360deg; } }',
+  '@keyframes dsh-ultracode-spin { to { --dsh-ultracode-angle: 360deg; } }',
   [
-    '.dsh-ultra-chip {',
+    '.dsh-ultracode-chip {',
     '  font: inherit;',
     '  border: 1px solid currentColor;',
     '  border-radius: 999px;',
@@ -158,25 +158,25 @@ const RAINBOW_CSS = [
     '}',
   ].join('\n'),
   [
-    '.dsh-ultra-chip[data-state=\'on\'] {',
+    '.dsh-ultracode-chip[data-state=\'on\'] {',
     '  border: none;',
     '  color: #141419;',
     '  opacity: 1;',
     '  background: linear-gradient(90deg, #ff5f6d, #ffc371, #47ffb1, #5b8cff, #b15cff, #ff5f6d);',
     '  background-size: 200% 100%;',
-    '  animation: dsh-ultra-slide 2.5s linear infinite;',
+    '  animation: dsh-ultracode-slide 2.5s linear infinite;',
     '}',
   ].join('\n'),
   [
-    '.dsh-ultra-chip[data-state=\'busy\'] {',
+    '.dsh-ultracode-chip[data-state=\'busy\'] {',
     '  opacity: 0.5;',
     '  pointer-events: none;',
     '}',
   ].join('\n'),
-  '.dsh-ultra-error { color: #e5484d; font-size: 11px; margin-left: 6px; }',
-  '@keyframes dsh-ultra-slide { to { background-position: 200% 0; } }',
+  '.dsh-ultracode-error { color: #e5484d; font-size: 11px; margin-left: 6px; }',
+  '@keyframes dsh-ultracode-slide { to { background-position: 200% 0; } }',
   '@media (prefers-reduced-motion: reduce) {',
-  '  [data-composer-card][data-dsh-ultra=\'on\']::after { animation: none; }',
-  '  .dsh-ultra-chip[data-state=\'on\'] { animation: none; }',
+  '  [data-composer-card][data-dsh-ultracode=\'on\']::after { animation: none; }',
+  '  .dsh-ultracode-chip[data-state=\'on\'] { animation: none; }',
   '}',
 ].join('\n')
