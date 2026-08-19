@@ -5,7 +5,30 @@
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { foldUltra, Config, deepestRankedEffort } from '../lib/index.js'
+import { foldUltra, chainUltra, deepestRankedEffort, Config } from '../lib/index.js'
+
+test('chainUltra: subagent children inherit, forks stop at their own seed', () => {
+  const on = [run('ultra', '')]
+  const off = [run('ultra', 'off')]
+  const node = (id, events, parent, depth) => ({ id, events, parent, depth })
+  const resolve = table => id => table.get(id)
+  // Subagent (depth 1) of an ultra-on parent inherits.
+  assert.equal(chainUltra(node('child', [], 'parent', 1), resolve(new Map([['parent', node('parent', on)]]))), true)
+  // Subagent of a plain parent does not.
+  assert.equal(chainUltra(node('child', [], 'parent', 1), resolve(new Map([['parent', node('parent', off)]]))), false)
+  // Two-level delegation walks to the grandparent.
+  const deep = new Map([
+    ['mid', node('mid', [], 'root', 1)],
+    ['root', node('root', on)],
+  ])
+  assert.equal(chainUltra(node('leaf', [], 'mid', 2), resolve(deep)), true)
+  // A fork (depth 0) never consults its seed parent, even an ultra-on one.
+  assert.equal(chainUltra(node('fork', [], 'parent', 0), resolve(new Map([['parent', node('parent', on)]]))), false)
+  // A disposed parent (unresolvable) ends the walk without inheriting.
+  assert.equal(chainUltra(node('child', [], 'gone', 1), resolve(new Map())), false)
+  // A malformed cyclic lineage terminates instead of looping.
+  assert.equal(chainUltra(node('a', [], 'b', 1), resolve(new Map([['b', node('b', [], 'a', 1)]]))), false)
+})
 
 test('deepestRankedEffort picks the deepest entry under the known vocabulary', () => {
   const ids = list => list.map(id => ({ id }))

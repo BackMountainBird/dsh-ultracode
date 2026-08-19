@@ -8,7 +8,7 @@ While active, every model request of the session is pinned to the configured rea
 - `/ultra off` — leave it
 - Composer **ULTRA** chip in the web UI with an animated rainbow border while active (static under `prefers-reduced-motion`)
 
-State is recorded purely through the harness-owned `command/run` session event (appended by the commands runtime before every admitted `/ultra` execution), so resume restores it from the log and the `ultra` projection the web chip reads folds the same events. No custom session events, no tool-catalog changes. Spawn subagents start fresh sessions (no inheritance); fork subagents seed the parent's balanced completed-turn prefix, so a switch made after the last completed `turn/end` reaches forks once the parent completes another turn.
+State is recorded purely through the harness-owned `command/run` session event (appended by the commands runtime before every admitted `/ultra` execution), so resume restores it from the log and the `ultra` projection the web chip reads folds the same events. No custom session events, no tool-catalog changes. Subagent children inherit the effective state through the delegation chain (each child's `parentSession`, resolved against the live session store; the effort resolves against the child's own model) — matching Claude Code's "omit to inherit the session effort" default for spawned workers. Fork children seed the parent's balanced completed-turn prefix, so a switch made after the last completed `turn/end` reaches forks once the parent completes another turn.
 
 ## Install
 

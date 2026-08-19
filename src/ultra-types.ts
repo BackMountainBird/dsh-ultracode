@@ -78,3 +78,44 @@ export function foldUltra(events: readonly SessionEvent[], end = events.length):
   }
   return active
 }
+
+/** What a delegation-chain walk needs from one session. */
+export interface ChainNode {
+  readonly id: string
+  /** The session's own event log. */
+  readonly events: readonly SessionEvent[]
+  /** Subagent parent (delegation lineage), or a fork seed parent — see `depth`. */
+  readonly parent?: string
+  /**
+   * Delegation depth: zero for top-level and fork sessions (a fork inherits
+   * through its seeded prefix, NOT through the live parent — a later parent
+   * switch must not reach an already-spawned branch), positive for subagent
+   * children (the chain walk applies).
+   */
+  readonly depth: number
+}
+
+/**
+ * The effective ultra state of one session: its own folded state, then — for
+ * subagent children only (positive depth) — the parent's, walking up the
+ * delegation chain. Forks stop at their own seed (depth zero); cycles are
+ * guarded; a disposed (unresolvable) parent ends the walk without inheriting.
+ * Inheritance only ever adds: a child cannot opt out, because the command
+ * surface targets main sessions only. Matches Claude Code's "omit to inherit
+ * the session effort" default for spawned workers.
+ *
+ * @param start The requesting session as a chain node.
+ * @param resolve Looks up another live session by id; undefined ends the walk.
+ * @returns Whether ultra mode is in force for this session.
+ */
+export function chainUltra(start: ChainNode, resolve: (id: string) => ChainNode | undefined): boolean {
+  const seen = new Set<string>()
+  let current: ChainNode | undefined = start
+  while (current !== undefined && !seen.has(current.id)) {
+    seen.add(current.id)
+    if (foldUltra(current.events)) return true
+    if (current.parent === undefined || current.depth <= 0) return false
+    current = resolve(current.parent)
+  }
+  return false
+}

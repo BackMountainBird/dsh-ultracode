@@ -27,6 +27,10 @@ import type { Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import type { ReasoningEffortId as ReasoningEffort } from '@deepseek-ai/dsh-llm'
 import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
+// Value import: SessionId is the runtime brand constructor; the store lookup
+// keys on it. Also resolves ctx.sessions (SessionStore) for the chain walk.
+import { SessionId } from '@deepseek-ai/dsh-session'
+import type { Session } from '@deepseek-ai/dsh-session'
 // Declaration merge only: pulls the Events map ('agent/request') and the
 // AssembleContext { agent } merge.
 import type {} from '@deepseek-ai/dsh-agent'
@@ -38,14 +42,14 @@ import type {} from '@deepseek-ai/dsh-commands'
 import type {} from '@deepseek-ai/dsh-session-projection'
 import { z as zod } from 'zod'
 import type { ZodType } from 'zod'
-import { foldUltra, deepestRankedEffort, type UltraProjection } from './ultra-types.ts'
+import { foldUltra, chainUltra, deepestRankedEffort, type ChainNode, type UltraProjection } from './ultra-types.ts'
 
 export type { UltraProjection } from './ultra-types.ts'
-export { foldUltra, deepestRankedEffort, EFFORT_RANK } from './ultra-types.ts'
+export { foldUltra, chainUltra, deepestRankedEffort, EFFORT_RANK } from './ultra-types.ts'
 
 export const name = 'dsh-ultra'
 
-export const inject = ['systemPrompt', 'llm']
+export const inject = ['systemPrompt', 'llm', 'sessions']
 
 /** Plugin configuration. */
 export interface Config {
@@ -108,6 +112,32 @@ function notice(active: boolean) {
   })
 }
 
+/** One live session reduced to the chain-walk node shape. */
+function chainNodeOf(session: Session): ChainNode {
+  return {
+    id: session.id as string,
+    events: session.events,
+    parent: session.header.parentSession as string | undefined,
+    depth: session.header.delegationDepth ?? 0,
+  }
+}
+
+/**
+ * The effective ultra state of one session: its own fold, then the
+ * delegation-parent chain for subagent children (the parent must still be
+ * live in the store; a disposed parent ends the walk). Synchronous — both the
+ * section callback and the request waterfall call it inline.
+ * @param ctx - plugin context carrying the session store.
+ * @param session - the requesting session.
+ * @returns whether ultra mode is in force for this session.
+ */
+function inheritedUltra(ctx: Context, session: Session): boolean {
+  return chainUltra(chainNodeOf(session), (id) => {
+    const parent = ctx.sessions.get(SessionId(id))
+    return parent === undefined ? undefined : chainNodeOf(parent)
+  })
+}
+
 /**
  * Host plugin body: the `ultra:policy` prompt section, the effort pin, the
  * global `/ultra` command, and the `ultra` session projection.
@@ -131,7 +161,7 @@ export function apply(ctx: Context, config: Config): void {
     order: config.promptSectionOrder ?? 120,
     text: (context) => {
       if (context.agent === undefined) return ''
-      return foldUltra(context.agent.session.events) ? section : ''
+      return inheritedUltra(ctx, context.agent.session) ? section : ''
     },
   })
 
@@ -143,10 +173,13 @@ export function apply(ctx: Context, config: Config): void {
   // Model-selection still owns provider/model; ultra owns the effort while
   // active. A fixed config value pins literally; `auto` resolves each
   // request against the serving model's declared efforts, so the same
-  // profile serves DeepSeek (`max`) and GLM/Kimi (`high`) routes.
+  // profile serves DeepSeek (`max`) and GLM/Kimi (`high`) routes. Subagent
+  // children inherit the effective (chain-walked) ultra state — matching
+  // Claude Code's "omit to inherit the session effort" default for spawned
+  // workers — with the effort resolved against the CHILD's own model.
   ctx.on('agent/request', async ({ agent, signal }, next) => {
     const resolved = await next()
-    if (!foldUltra(agent.session.events)) return resolved
+    if (!inheritedUltra(ctx, agent.session)) return resolved
     if (fixedEffort !== undefined) return { ...resolved, reasoningEffort: fixedEffort }
     const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model, signal)
     const efforts = info.reasoning?.efforts
