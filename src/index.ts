@@ -116,10 +116,10 @@ function notice(active: boolean) {
 function chainNodeOf(session: Session): ChainNode {
   return {
     id: session.id as string,
-    events: session.events,
+    events: session.snapshotEvents(),
     parent: session.header.parentSession as string | undefined,
     depth: session.header.delegationDepth ?? 0,
-    ...session.header.seedLength === undefined ? {} : { seedLength: session.header.seedLength },
+    ...session.inheritedEventCount === 0 ? {} : { seedLength: session.inheritedEventCount },
   }
 }
 
@@ -202,7 +202,8 @@ export function apply(ctx: Context, config: Config): void {
         // state is the fold over everything before that final event. The
         // idempotence check compares the REQUESTED target (!off) with that
         // pre-switch state.
-        const was = foldUltra(agent.session.events, agent.session.events.length - 1)
+        const log = agent.session.snapshotEvents()
+        const was = foldUltra(log, log.length - 1)
         if (!off === was) {
           return {
             kind: 'success',
@@ -226,7 +227,7 @@ export function apply(ctx: Context, config: Config): void {
   ctx.inject(['sessionProjections'], (projectionCtx) => {
     projectionCtx.sessionProjections.register<'ultra', { active: boolean }>({
       key: 'ultra',
-      schema: ultraProjectionSchema,
+      stateSchema: ultraProjectionSchema,
       init: () => ({ active: false }),
       apply: (state, event) => {
         if (event.type === 'command/run' && event.data.name === 'ultra') {
@@ -235,7 +236,10 @@ export function apply(ctx: Context, config: Config): void {
         }
         return state
       },
-      view: state => ({ active: state.active }),
+      wire: {
+        viewSchema: ultraProjectionSchema,
+        view: state => ({ active: state.active }),
+      },
       stateVersion: 1,
     })
   })

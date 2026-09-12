@@ -9,6 +9,8 @@ import { useEffect, useRef, useState } from 'react'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.right seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+// Type-only: pulls the session standard kit (useProjection) into the props.
+import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { UltraChipInjected } from './index.ts'
 
 /** Full right-seat component props: runtime share, injected share, and the locale seat. */
