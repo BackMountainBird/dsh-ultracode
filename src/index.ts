@@ -3,11 +3,15 @@
  *
  * A per-session effort tier: while active, every model request is pinned to
  * the configured adapter-owned reasoning effort (default `max`) through the
- * `agent/request` waterfall, a deployment-owned policy section rides the
- * system prompt, and the workflow tool's explicit user opt-in requirement is
- * lifted for the session (declared in the section text). Claude Code's
- * ultracode tier is the reference: the tier's substance is the standing
- * orchestration policy, not a deeper reasoning parameter.
+ * `agent/request` waterfall, and a deployment-owned policy section rides the
+ * system prompt. The section is depth-gated: the top-level session renders
+ * the orchestration mandate (the workflow tool's explicit user opt-in
+ * requirement is lifted, declared in the section text), while every
+ * delegated child renders a worker policy that keeps the workflow tool's
+ * default opt-in rule — an orchestration mandate that recursed would make
+ * every child fan out workflows of its own. Claude Code's ultracode tier is
+ * the reference: the tier's substance is the standing orchestration policy,
+ * not a deeper reasoning parameter.
  *
  * State lives entirely in the session log: the commands runtime appends
  * `command/run` before every admitted `/ultra` execution and that event is
@@ -55,9 +59,16 @@ export const inject = ['systemPrompt', 'llm', 'sessions']
 export interface Config {
   /**
    * Guidance rendered as the `ultra:policy` prompt section while ultra mode
-   * is active.
+   * is active for a top-level session (`delegationDepth` zero).
    */
   section?: string
+  /**
+   * Guidance rendered as the `ultra:policy` prompt section while ultra mode
+   * is active for a delegated child (`delegationDepth` above zero): the
+   * worker policy, which keeps the workflow tool's default opt-in rule so
+   * the top-level orchestration mandate does not recurse.
+   */
+  childSection?: string
   /**
    * Reasoning effort pinned on every request while ultra mode is active:
    * `auto` (default) resolves each request to the deepest effort the serving
@@ -89,8 +100,24 @@ const DEFAULT_SECTION
   + 'steps, and uncertainty as such. Solo only on conversational turns, trivial '
   + 'mechanical edits, or work already verified.'
 
+/**
+ * Default worker policy for delegated children: ultra's quality bar without
+ * the orchestration mandate, so fan-out stays at the top-level session.
+ */
+const DEFAULT_CHILD_SECTION
+  = 'Ultra mode is on (inherited from the delegating session): optimize for the most exhaustive, '
+  + 'correct answer to your delegated task, not the fastest or cheapest — token cost is not a '
+  + 'constraint. You are the executor of this task, not its orchestrator: the workflow tool\'s '
+  + 'default opt-in rule stands, so start one only when your task brief explicitly requests '
+  + 'orchestration; when parallel work you did start times out, narrow it or report what is '
+  + 'missing instead of spawning replacement waves. Verify adversarially before reporting: '
+  + 'ground counts and "all instances" claims in a check you ran, not an estimate. Sandbox, '
+  + 'approval policy, and your other operating rules are unchanged; report failures, skipped '
+  + 'steps, and uncertainty as such.'
+
 export const Config: z<Config> = z.object({
   section: z.string().default(DEFAULT_SECTION),
+  childSection: z.string().default(DEFAULT_CHILD_SECTION),
   effort: z.string().default('auto'),
   promptSectionOrder: z.natural().default(120),
 })
@@ -146,13 +173,17 @@ function inheritedUltra(ctx: Context, session: Session): boolean {
  * @param config - validated plugin config.
  */
 export function apply(ctx: Context, config: Config): void {
-  // The schema defaults an absent `section`; an explicitly blank one is a
+  // The schemas default absent sections; an explicitly blank one is a
   // misconfiguration and fails loud at load rather than rendering an empty
   // policy while the tier claims to be active.
   if (config.section === undefined || config.section.trim() === '') {
     throw new Error('dsh-ultracode: config `section` must be a non-empty string')
   }
+  if (config.childSection === undefined || config.childSection.trim() === '') {
+    throw new Error('dsh-ultracode: config `childSection` must be a non-empty string')
+  }
   const section = config.section
+  const childSection = config.childSection
   const fixedEffort = config.effort === undefined || config.effort === 'auto'
     ? undefined
     : ReasoningEffortId(config.effort)
@@ -162,7 +193,14 @@ export function apply(ctx: Context, config: Config): void {
     order: config.promptSectionOrder ?? 120,
     text: (context) => {
       if (context.agent === undefined) return ''
-      return inheritedUltra(ctx, context.agent.session) ? section : ''
+      if (!inheritedUltra(ctx, context.agent.session)) return ''
+      // The orchestration mandate belongs to the top-level session: rendering
+      // it in a delegated child makes every child fan out workflows of its
+      // own, and the harness enforces no delegation-depth budget on the
+      // workflow path. Children render the worker policy instead; the
+      // durable header depth is the authority (runtime options can only
+      // deepen it, and children are always stamped).
+      return (context.agent.session.header.delegationDepth ?? 0) > 0 ? childSection : section
     },
   })
 

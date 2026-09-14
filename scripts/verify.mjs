@@ -60,6 +60,20 @@ test('an absent section config materializes the default policy (regression: unde
   assert.ok(resolved.section.trim().length > 100)
 })
 
+test('the default child policy is a worker policy, not the orchestration mandate (regression: children inheriting the mandate recursed workflows without bound)', () => {
+  const resolved = Config({})
+  // Child text present and substantial.
+  assert.ok(resolved.childSection.includes('Ultra mode is on'))
+  assert.ok(resolved.childSection.trim().length > 100)
+  // The mandate's workflow-by-default instructions must not leak into it.
+  assert.ok(!resolved.childSection.includes('use it on every substantive task'))
+  assert.ok(!resolved.childSection.includes('one workflow per phase'))
+  // The child keeps the workflow tool's default opt-in rule.
+  assert.ok(resolved.childSection.includes('opt-in rule stands'))
+  // A timed-out wave narrows instead of multiplying.
+  assert.ok(resolved.childSection.includes('instead of spawning replacement waves'))
+})
+
 /** One synthetic `command/run` event. */
 const run = (name, args) => ({
   type: 'command/run',

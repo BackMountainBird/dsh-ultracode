@@ -10,7 +10,7 @@
 
 ## One switch. Maximum depth.
 
-`dsh-ultracode` adds an **ultra tier** to DeepSeek Harness: one per-session switch that pins every model request to the serving model's deepest reasoning effort and activates a standing orchestration policy — workflow fan-out by default on substantive tasks, adversarial verification before reporting, context hygiene.
+`dsh-ultracode` adds an **ultra tier** to DeepSeek Harness: one per-session switch that pins every model request to the serving model's deepest reasoning effort and activates a standing orchestration policy — workflow fan-out by default on substantive tasks, adversarial verification before reporting, context hygiene. Delegated children inherit the tier as a worker policy (deep effort, adversarial verification) without the workflow mandate, so orchestration stays at the top.
 
 Modeled on Claude Code's `ultracode` tier: the tier's substance is the standing orchestration policy, not a deeper reasoning parameter. Works on any provider whose adapter declares efforts from the shared vocabulary — DeepSeek (`max`), GLM / Kimi routes (`high` or `max`, whichever the model declares), or fully custom OpenAI-compatible routes.
 
@@ -27,10 +27,10 @@ Modeled on Claude Code's `ultracode` tier: the tier's substance is the standing 
 | Capability | What it changes |
 | --- | --- |
 | **Per-session effort tier** | One switch pins every model request to the serving model's deepest declared effort (`auto`), or a literal configured value. |
-| **Orchestration policy** | A deployment-owned prompt section rides the system prompt while active: standing workflow opt-in, adversarial verification, narrow-the-wave retries on provider limits. |
+| **Orchestration policy** | A deployment-owned prompt section rides the system prompt while active: standing workflow opt-in, adversarial verification, narrow-the-wave retries on provider limits — for the top-level session. |
 | **Composer chip + rainbow border** | A ULTRA chip in the composer bar; the composer card glows while the tier is in force (static under `prefers-reduced-motion`). |
 | **Picker consistency** | Toggling re-syncs the native effort picker through the public models API, so the display always matches the pinned reality. |
-| **Delegation-aware** | Spawn subagents inherit the effective state through the delegation chain; forks inherit through their seeded prefix and freeze there. |
+| **Delegation-aware** | Spawn subagents inherit the effective state through the delegation chain — the effort pin and a worker policy (`childSection`), never the workflow mandate; forks inherit through their seeded prefix and freeze there. |
 
 ## Install
 
@@ -73,9 +73,9 @@ Leave with `/ultra off` (or click the chip again).
 ## How it works
 
 1. **The switch is one command.** `/ultra` (and `/ultra off`) execute through the harness command runtime, which appends the `command/run` session event *before* the handler runs. That event is the durable state — the plugin defines no session event of its own, so resume and replay restore it for free, and the last command wins.
-2. **The policy rides the system prompt.** While active, an `ultra:policy` section renders into every request. The text is deployment-owned config; the default is the orchestration policy (standing workflow opt-in, adversarial verification, context hygiene, narrow the wave when a provider's concurrency limit times parallel subagents out).
+2. **The policy rides the system prompt, gated by delegation depth.** While active, an `ultra:policy` section renders into every request. The top-level session (`delegationDepth` zero) renders `section`: the orchestration policy (standing workflow opt-in, adversarial verification, context hygiene, narrow the wave when a provider's concurrency limit times parallel subagents out). A delegated child (`delegationDepth` above zero) renders `childSection` instead: a worker policy that keeps the workflow tool's default opt-in rule — an inherited mandate would make every child fan out workflows of its own, with no delegation-depth budget on the workflow path to stop it.
 3. **The effort is pinned per request.** An `agent/request` waterfall listener — prepended, so it stays outside the per-agent model-selection listener that would strip it — replaces each request's reasoning effort. `auto` (default) resolves the deepest effort the serving model declares under the shared `off…max` vocabulary; a literal value pins exactly and fails loud if the adapter does not declare it.
-4. **Delegation inherits it.** Spawn children walk the delegation chain (each child's `parentSession`, resolved against the live session store) and get the pin and policy too — the effort resolving against the *child's* model. Fork children inherit only through their seeded completed-turn prefix; a parent's later switch never reaches an already-spawned branch.
+4. **Delegation inherits it.** Spawn children walk the delegation chain (each child's `parentSession`, resolved against the live session store) and get the pin and the worker policy — the effort resolving against the *child's* model. Fork children inherit only through their seeded completed-turn prefix; a parent's later switch never reaches an already-spawned branch.
 5. **The model is told.** Each genuine switch injects one plugin-source notice user message, so the model learns the change without diffing prompt sections.
 6. **The picker follows.** The chip's toggle also re-submits the session's model selection through the public models API (deepest effort on switch, provider default on exit), so the native effort picker shows the tier actually in force. The request-side pin remains the guarantee.
 7. **The web half is one client bundle.** A ULTRA chip occupies the composer's `conversation.input.right` seat; state rides the host-computed `ultra` projection (zero client-side ultra state), and while active the chip marks the composer card — an injected stylesheet renders the rainbow border. The bundle ships as a closure factory (`window.__ModuleLoader__.load`) with platform externals resolved through the loader's module table.
@@ -92,7 +92,8 @@ Profile row `dsh-ultracode`:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
-| `section` | built-in policy text | Rendered as the `ultra:policy` prompt section while active |
+| `section` | built-in policy text | Rendered as the `ultra:policy` prompt section while active, for top-level sessions (`delegationDepth` zero) |
+| `childSection` | built-in worker policy | Rendered instead of `section` for delegated children (`delegationDepth` above zero); the default keeps the workflow tool's opt-in rule so the mandate does not recurse |
 | `effort` | `auto` | `auto` pins each request to the deepest effort the serving model declares; a literal value must be one of the serving adapter's declared efforts (fails loud otherwise) |
 | `promptSectionOrder` | `120` | Prompt-section order |
 
@@ -100,6 +101,7 @@ Profile row `dsh-ultracode`:
 
 - State is the harness-owned `command/run` event: no custom session events, and the tool catalog never changes across modes (request-cache stability).
 - Inheritance only ever adds: subagent sessions have no user command surface, so children cannot opt out.
+- The orchestration mandate does not recurse: children render `childSection` (the worker policy), keeping the workflow tool's default opt-in rule — only the top-level session orchestrates by default.
 - The request-side pin is the truth; the picker sync is display consistency — a manual pick made mid-ultra realigns on the next toggle, while requests keep running pinned.
 - Fan-out capacity belongs to the provider: the default policy tells the model to retry timed-out parallel work as a narrower wave instead of abandoning it.
 - Ultra does not touch plan mode: the two are independent logged states and compose freely (`/plan` + `/ultra` = max-effort planning under plan's read-only constraints).
