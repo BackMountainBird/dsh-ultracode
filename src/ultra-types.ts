@@ -5,14 +5,22 @@
  *
  * Ultra state is recorded purely through the harness-owned `command/run`
  * event the commands runtime appends before every admitted `/ultra`
- * execution — out-of-repo session events are dropped by current harness
- * builds, so the plugin defines no event type of its own. The last
+ * execution. Effort-pin ownership is tracked separately by a host-owned
+ * ignorable plugin record. The last
  * `/ultra` command wins: `/ultra` or `/ultra on` activates, `/ultra off`
  * deactivates.
  * @module dsh-ultracode/ultra-types
  */
 
 import type { SessionEvent } from '@deepseek-ai/dsh-session/types'
+import type { ContextFormed } from '@deepseek-ai/dsh-llm'
+
+declare module '@deepseek-ai/dsh-llm' {
+  interface MessageSourceMap {
+    /** A switch notice produced by this plugin. */
+    'dsh-ultracode': { kind: 'dsh-ultracode' } & ContextFormed
+  }
+}
 
 /** Wire payload of the `ultra` session projection: whole-value replace. */
 export interface UltraProjection {
@@ -94,9 +102,9 @@ export interface ChainNode {
    */
   readonly depth: number
   /**
-   * Present only on seeded children (forks — the driver stamps it when the
-   * creation carried a seed). A fork inherits through its seeded prefix, NOT
-   * through the live parent: a later parent switch must not reach an
+   * Present only on seeded children (forks, including an empty seed).
+   * A fork inherits through its seeded prefix, not through the live parent:
+   * a later parent switch must not reach an
    * already-spawned branch. `undefined` marks a spawn child (fresh log), the
    * only kind that walks the live chain.
    */

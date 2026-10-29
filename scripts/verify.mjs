@@ -1,11 +1,145 @@
 /**
- * Offline self-check: foldUltra semantics over synthetic session logs.
- * Run with `node scripts/verify.mjs` (zero dependencies).
+ * Offline checks for session folds, host registration, and the browser bundle.
+ * Run `pnpm build` before `pnpm verify` to check the delivered artifacts.
  * @module dsh-ultracode/verify
  */
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { foldUltra, chainUltra, deepestRankedEffort, Config } from '../lib/index.js'
+import { foldUltra, chainUltra, deepestRankedEffort, Config, apply } from '../lib/index.js'
+import { readFileSync } from 'node:fs'
+import { renderToStaticMarkup } from 'react-dom/server'
+import { createElement } from 'react'
+import { createRequire } from 'node:module'
+import { runInNewContext } from 'node:vm'
+import { UltraChip } from '../lib/client/UltraChip.js'
+import { Session, SessionId, appendPluginRecord } from '@deepseek-ai/dsh-session'
+
+/** Capture plugin contributions without starting a provider or a browser. */
+function hostFixture() {
+  const hooks = new Map()
+  let section, command, projection
+  const ctx = {
+    systemPrompt: { section: value => { section = value } },
+    sessions: { get: () => undefined },
+    llm: { resolveModelInfo: async () => ({ reasoning: { efforts: [{ id: 'high' }, { id: 'max' }] } }) },
+    on: (name, handler) => { hooks.set(name, handler) },
+    inject: (services, callback) => callback(ctx),
+    commands: { register: value => { command = value } },
+    sessionProjections: { register: value => { projection = value } },
+  }
+  apply(ctx, Config({}))
+  return { ctx, hooks, section, command, projection }
+}
+
+const sessionFixture = (events = [], header = {}, id = 'session-test') => {
+  const baseline = Session.create(SessionId(id))
+  const session = Session.create(SessionId(id), [], { ...baseline.header, ...header }, 0)
+  for (const event of events) session.append(event.type, event.data)
+  return session
+}
+
+const modelFixture = () => {
+  let selection = { provider: 'provider', model: 'model', reasoningEffort: 'low' }
+  return { current: () => selection, select: value => { selection = value } }
+}
+
+test('command switches inject an attributed notice and repeated switches stay silent', async () => {
+  const { command } = hostFixture()
+  const events = [run('ultra', '')]
+  const notices = []
+  const agent = { session: sessionFixture(events), model: modelFixture(), inject: message => notices.push(message) }
+  assert.equal((await command.handler({ agent, rawInput: '' })).kind, 'success')
+  assert.equal(agent.model.current().reasoningEffort, 'max')
+  assert.equal(notices.length, 1)
+  assert.equal(notices[0].source.kind, 'dsh-ultracode')
+  assert.equal(notices[0].source.form, 'notice')
+  agent.session.append('command/run', run('ultra', '').data)
+  await command.handler({ agent, rawInput: '' })
+  assert.equal(notices.length, 1)
+  agent.session.append('command/run', run('ultra', 'off').data)
+  await command.handler({ agent, rawInput: 'off' })
+  assert.equal(notices.length, 2)
+  assert.equal(agent.model.current().reasoningEffort, undefined)
+})
+
+test('an empty seeded fork never inherits a later parent switch', () => {
+  const { ctx, section } = hostFixture()
+  ctx.sessions.get = () => sessionFixture([run('ultra', '')], {}, 'parent')
+  const agent = { session: sessionFixture([], { parentSession: 'parent', delegationDepth: 1, isSeeded: true }) }
+  assert.equal(section.text({ agent }), '')
+})
+
+test('created agents inherit effort using their serving model and the worker policy', async () => {
+  const { ctx, hooks, section } = hostFixture()
+  const agent = { session: sessionFixture([run('ultra', '')]), model: modelFixture() }
+  const initialize = () => hooks.get('agent/created')({ agent, signal: new AbortController().signal })
+  await initialize()
+  assert.equal(agent.model.current().reasoningEffort, 'max')
+  assert.ok(section.text({ agent }).includes('use it on every substantive task'))
+  agent.session = sessionFixture([], { parentSession: 'parent', delegationDepth: 1, isSeeded: false })
+  ctx.sessions.get = () => sessionFixture([run('ultra', '')], {}, 'parent')
+  ctx.llm.resolveModelInfo = async () => ({ reasoning: { efforts: [{ id: 'high' }] } })
+  await initialize()
+  assert.equal(agent.model.current().reasoningEffort, 'high')
+  assert.ok(section.text({ agent }).includes('opt-in rule stands'))
+  ctx.sessions.get = () => undefined
+  await initialize()
+  assert.equal(agent.model.current().reasoningEffort, undefined)
+})
+
+test('browser command failures remain visible and never perform a second model selection', async () => {
+  let client, entry
+  const style = { dataset: {}, remove() {} }
+  runInNewContext(readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8'), {
+    window: { __ModuleLoader__: { load: module => { client = module.factory(createRequire(import.meta.url)) } } },
+    document: { createElement: () => style, head: { append() {} } },
+  })
+  const calls = []
+  const ctx = {
+    effect: callback => callback(), locale: { register() {} },
+    slots: { inject: (name, callback) => callback(), register: options => { entry = options } },
+    remote: { commands: { execute: async (...args) => {
+      calls.push(args)
+      return { ok: true, value: { result: { kind: 'error', text: 'model unavailable' } } }
+    } } },
+  }
+  client.apply(ctx)
+  const injected = entry.inject('session-test')
+  assert.equal(await injected.toggle(false), 'model unavailable')
+  assert.equal(calls[0][1], '/ultra')
+  ctx.remote.commands.execute = async () => ({ ok: true, value: { result: { kind: 'success' } } })
+  assert.equal(await injected.toggle(true), null)
+})
+
+test('projection publishes switch state and keeps unchanged references', () => {
+  const { projection } = hostFixture()
+  const initial = projection.init({})
+  assert.equal(projection.apply(initial, run('plan', '')), initial)
+  const active = projection.apply(initial, run('ultra', ''))
+  assert.deepEqual(projection.wire.view(active), { active: true })
+  assert.equal(projection.apply(active, run('ultra', '')), active)
+  assert.deepEqual(projection.apply(active, run('ultra', 'off')), { active: false })
+})
+
+test('restored effort ownership records are validated before use', async () => {
+  const { hooks } = hostFixture()
+  const session = sessionFixture()
+  appendPluginRecord(session, 'plugin:dsh-ultracode/effort-pin', {
+    selection: { provider: 'provider', model: 'model', reasoningEffort: 123 },
+  })
+  await assert.rejects(hooks.get('agent/created')({ agent: { session, model: modelFixture() } }), /reasoningEffort/)
+})
+
+test('the rendered chip uses the stylesheet class and composer marker', () => {
+  const markup = renderToStaticMarkup(createElement(UltraChip, {
+    useProjection: () => ({ active: true }), toggle: async () => null, t: key => key,
+  }))
+  assert.ok(markup.includes('class="dsh-ultracode-chip"'))
+  const component = readFileSync(new URL('../lib/client/UltraChip.js', import.meta.url), 'utf8')
+  const client = readFileSync(new URL('../lib/client.js', import.meta.url), 'utf8')
+  assert.ok(component.includes('data-dsh-ultracode'))
+  assert.ok(client.includes('data-dsh-ultracode'))
+})
 
 test('chainUltra: subagent children inherit, forks stop at their own seed', () => {
   const on = [run('ultra', '')]

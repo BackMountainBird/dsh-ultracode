@@ -2,8 +2,8 @@
  * Ultra mode for DeepSeek Harness — host half.
  *
  * A per-session effort tier: while active, every model request is pinned to
- * the configured adapter-owned reasoning effort (default `max`) through the
- * `agent/request` waterfall, and a deployment-owned policy section rides the
+ * the configured adapter-owned reasoning effort (default `auto`) through
+ * durable model selection, and a deployment-owned policy section rides the
  * system prompt. The section is depth-gated: the top-level session renders
  * the orchestration mandate (the workflow tool's explicit user opt-in
  * requirement is lifted, declared in the section text), while every
@@ -16,13 +16,13 @@
  * State lives entirely in the session log: the commands runtime appends
  * `command/run` before every admitted `/ultra` execution and that event is
  * the fold input for the prompt section, the effort pin, and the `ultra`
- * session projection the web chip reads. A plugin-source notice user message
+ * session projection the web chip reads. A producer-attributed notice user message
  * narrates each switch so the model learns the change without diffing
- * sections. No custom session event is defined (out-of-repo events are
- * dropped by current harness builds), and the tool catalog never changes.
+ * sections. An ignorable plugin record retains effort-pin ownership across
+ * reload and resume. The tool catalog never changes.
  *
- * Mounting is host-plane: the command registers globally, the section into
- * the shared registry, so the plugin needs no per-agent realm.
+ * The command and section register globally; scoped lifecycle listeners
+ * reconcile each Agent's model selection.
  *
  * @module dsh-ultracode
  */
@@ -33,11 +33,9 @@ import type { ReasoningEffortId as ReasoningEffort } from '@deepseek-ai/dsh-llm'
 import { ReasoningEffortId, createUserMessage } from '@deepseek-ai/dsh-llm'
 // Value import: SessionId is the runtime brand constructor; the store lookup
 // keys on it. Also resolves ctx.sessions (SessionStore) for the chain walk.
-import { SessionId } from '@deepseek-ai/dsh-session'
+import { SessionId, appendPluginRecord, pluginRecordOf } from '@deepseek-ai/dsh-session'
 import type { Session } from '@deepseek-ai/dsh-session'
-// Declaration merge only: pulls the Events map ('agent/request') and the
-// AssembleContext { agent } merge.
-import type {} from '@deepseek-ai/dsh-agent'
+import type { Agent, ModelSelection } from '@deepseek-ai/dsh-agent'
 // Declaration merge only: makes ctx.systemPrompt's section face visible.
 import type {} from '@deepseek-ai/dsh-system-prompt'
 // Type-only edge: resolves ctx.commands for the optional command child.
@@ -127,6 +125,33 @@ const ultraProjectionSchema: ZodType<UltraProjection> = zod.object({
   active: zod.boolean(),
 })
 
+/** Persisted ownership of an explicit effort, independent of the ultra switch. */
+const effortPinSchema = zod.object({
+  selection: zod.object({
+    provider: zod.string().min(1),
+    model: zod.string().min(1),
+    reasoningEffort: zod.string().min(1).transform(ReasoningEffortId),
+  }).nullable(),
+})
+
+declare module '@deepseek-ai/dsh-session/types' {
+  interface PluginRecordMap {
+    'plugin:dsh-ultracode/effort-pin': zod.infer<typeof effortPinSchema>
+  }
+}
+
+/** Recover ownership after reload/resume; malformed owner records fail validation. */
+function effortPinOf(session: Session): ModelSelection | null {
+  const events = session.snapshotEvents()
+  for (let index = events.length - 1; index >= 0; index--) {
+    const record = pluginRecordOf(events[index]!)
+    if (record?.type === 'plugin:dsh-ultracode/effort-pin') {
+      return effortPinSchema.parse(record.data).selection
+    }
+  }
+  return null
+}
+
 /** One-line switch notice the model reads at its next step boundary. */
 function notice(active: boolean) {
   const text = active
@@ -135,7 +160,7 @@ function notice(active: boolean) {
   return createUserMessage({
     content: [{ type: 'text', text }],
     // The notice is already one sentence, so it is its own summary.
-    source: { kind: 'plugin', plugin: 'dsh-ultracode', form: 'notice', summary: text },
+    source: { kind: 'dsh-ultracode', form: 'notice', summary: text },
   })
 }
 
@@ -146,7 +171,7 @@ function chainNodeOf(session: Session): ChainNode {
     events: session.snapshotEvents(),
     parent: session.header.parentSession as string | undefined,
     depth: session.header.delegationDepth ?? 0,
-    ...session.inheritedEventCount === 0 ? {} : { seedLength: session.inheritedEventCount },
+    ...session.header.isSeeded ? { seedLength: session.inheritedEventCount } : {},
   }
 }
 
@@ -164,6 +189,11 @@ function inheritedUltra(ctx: Context, session: Session): boolean {
     const parent = ctx.sessions.get(SessionId(id))
     return parent === undefined ? undefined : chainNodeOf(parent)
   })
+}
+
+/** Compare complete selections, including provider-default effort. */
+function sameSelection(left: Readonly<ModelSelection>, right: Readonly<ModelSelection>): boolean {
+  return left.provider === right.provider && left.model === right.model && left.reasoningEffort === right.reasoningEffort
 }
 
 /**
@@ -187,6 +217,58 @@ export function apply(ctx: Context, config: Config): void {
   const fixedEffort = config.effort === undefined || config.effort === 'auto'
     ? undefined
     : ReasoningEffortId(config.effort)
+  // Transient flag for a command changing a selection while assembly awaits.
+  // Pin ownership itself is durable, so reload/resume can release old pins.
+  const changed = new WeakSet<Agent>()
+
+  // Model selection must be recorded before a step captures it. DSH 0.2.2
+  // rejects provider/model/effort changes from the old request waterfall.
+  const syncEffort = async (agent: Agent, signal?: AbortSignal, reset = false): Promise<void> => {
+    for (;;) {
+      signal?.throwIfAborted()
+      const current = agent.model.current()
+      if (current === undefined) return
+      const active = inheritedUltra(ctx, agent.session)
+      const owned = effortPinOf(agent.session)
+      if (!active && owned === null && !reset) return
+      if (!active && !reset && owned !== null && !sameSelection(current, owned)) {
+        appendPluginRecord(agent.session, 'plugin:dsh-ultracode/effort-pin', { selection: null })
+        return
+      }
+      let effort: ReasoningEffort | undefined
+      if (active) {
+        const info = await ctx.llm.resolveModelInfo(current.provider, current.model, signal)
+        const efforts = info.reasoning?.efforts
+        if (fixedEffort !== undefined && !efforts?.some(value => value.id === fixedEffort)) {
+          throw new Error(`dsh-ultracode: model ${current.provider}/${current.model} does not declare effort ${fixedEffort}`)
+        }
+        const deepest = efforts === undefined ? undefined : deepestRankedEffort(efforts)
+        effort = fixedEffort ?? (deepest === undefined ? undefined : ReasoningEffortId(deepest))
+        if (effort === undefined) {
+          if (owned !== null) appendPluginRecord(agent.session, 'plugin:dsh-ultracode/effort-pin', { selection: null })
+          return
+        }
+      }
+      signal?.throwIfAborted()
+      const latest = agent.model.current()
+      if (latest?.provider !== current.provider || latest.model !== current.model
+        || latest.reasoningEffort !== current.reasoningEffort
+        || inheritedUltra(ctx, agent.session) !== active) continue
+      if (effort !== current.reasoningEffort) {
+        agent.model.select({ provider: current.provider, model: current.model, ...effort === undefined ? {} : { reasoningEffort: effort } })
+        changed.add(agent)
+      }
+      const selection = effort === undefined ? null : { provider: current.provider, model: current.model, reasoningEffort: effort }
+      if (selection === null ? owned !== null : owned === null || !sameSelection(selection, owned)) {
+        appendPluginRecord(agent.session, 'plugin:dsh-ultracode/effort-pin', { selection })
+      }
+      return
+    }
+  }
+
+  ctx.on('agent/created', async ({ agent, signal }) => {
+    await syncEffort(agent, signal)
+  })
 
   ctx.systemPrompt.section({
     name: 'ultra:policy',
@@ -204,27 +286,34 @@ export function apply(ctx: Context, config: Config): void {
     },
   })
 
-  // Effort pin: prepend (cordis keeps one flat hook array per event; the
-  // chain runs array-head-first, i.e. head = outermost, whose post-`next()`
-  // override wins) guarantees this listener stays outside the per-agent
-  // model-selection listener installed at agent creation — which strips an
-  // inner listener's reasoningEffort and re-applies the session selection.
-  // Model-selection still owns provider/model; ultra owns the effort while
-  // active. A fixed config value pins literally; `auto` resolves each
-  // request against the serving model's declared efforts, so the same
-  // profile serves DeepSeek (`max`) and GLM/Kimi (`high`) routes. Subagent
-  // children inherit the effective (chain-walked) ultra state — matching
-  // Claude Code's "omit to inherit the session effort" default for spawned
-  // workers — with the effort resolved against the CHILD's own model.
-  ctx.on('agent/request', async ({ agent, signal }, next) => {
-    const resolved = await next()
-    if (!inheritedUltra(ctx, agent.session)) return resolved
-    if (fixedEffort !== undefined) return { ...resolved, reasoningEffort: fixedEffort }
-    const info = await ctx.llm.resolveModelInfo(resolved.provider, resolved.model, signal)
-    const efforts = info.reasoning?.efforts
-    const deepest = efforts === undefined ? undefined : deepestRankedEffort(efforts)
-    return deepest === undefined ? resolved : { ...resolved, reasoningEffort: ReasoningEffortId(deepest) }
-  }, true)
+  // A manual pick or parent switch may arrive after creation. A step has
+  // already captured its selection before pre-step listeners run, so a
+  // changed effort requires fresh preparation. Preserve the claimed batch,
+  // cancel only that preparation, and latch a waking notice behind its
+  // cancellation. No model request is admitted under the stale effort.
+  ctx.on('agent/pre-step', async ({ agent, signal, messages, modelSelection }, next) => {
+    if (!inheritedUltra(ctx, agent.session) && effortPinOf(agent.session) === null && !changed.has(agent)) return next()
+    await syncEffort(agent, signal)
+    const selected = agent.model.current()
+    changed.delete(agent)
+    if (selected === undefined || sameSelection(selected, modelSelection)) return next()
+    signal.throwIfAborted()
+    agent.inbox.splice('next-step', 0, 0, messages)
+    agent.cancel({ kind: 'hook', reason: 'ultra reasoning effort synchronized' }, { keepInbox: true })
+    const wake = createUserMessage({
+      content: [{ type: 'text', text: 'Ultra mode synchronized the model selection. Continue the pending task.' }],
+      source: { kind: 'dsh-ultracode', form: 'notice', summary: 'Ultra model selection synchronized.' },
+    })
+    agent.send(wake, 'next-turn', true)
+    // The replay must precede already queued followups. send() latches the
+    // wake after cancellation; synchronous reordering keeps that latch while
+    // putting only this plugin's notice ahead of those independent turns.
+    if (agent.inbox.nextTurn[0]?.id !== wake.id) {
+      agent.inbox.remove(wake.id)
+      agent.inbox.prepend('next-turn', wake)
+    }
+    return { kind: 'reject' }
+  }, { prepend: true })
 
   // The command child activates only when a command registry is composed
   // (headless assemblies stay unaffected).
@@ -233,7 +322,7 @@ export function apply(ctx: Context, config: Config): void {
       name: 'ultra',
       description: 'Toggle ultra mode (pinned max effort + orchestration policy)',
       input: { hint: '[off]' },
-      handler: ({ agent, rawInput }) => {
+      handler: async ({ agent, rawInput, signal }) => {
         const off = rawInput.trim() === 'off'
         // The runtime already appended THIS execution's `command/run` — the
         // committed state — before invoking the handler, so the pre-switch
@@ -242,6 +331,7 @@ export function apply(ctx: Context, config: Config): void {
         // pre-switch state.
         const log = agent.session.snapshotEvents()
         const was = foldUltra(log, log.length - 1)
+        await syncEffort(agent, signal, off)
         if (!off === was) {
           return {
             kind: 'success',

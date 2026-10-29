@@ -12,13 +12,10 @@
  */
 
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
-import type { ISessions } from '@deepseek-ai/dsh-api-session-controller/client'
-import type { ModelSelectionProjection } from '@deepseek-ai/dsh-api-session-controller/types'
 import type { SessionId } from '@deepseek-ai/dsh-session'
-// Type-only: pulls the commands and session remote channel declarations into
+// Type-only: pulls the commands remote channel declarations into
 // the TypertClientRemote namespace map this program's ctx.remote resolves to.
 import type {} from '@deepseek-ai/dsh-commands/remote'
-import type {} from '@deepseek-ai/dsh-api-session-controller/remote'
 // Type-only: pulls the ui-conversation SlotMap merge (the input.right seat).
 import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
 // Type-only: pulls the ui-slots LocaleNamespaceMap merge surface.
@@ -31,7 +28,7 @@ import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import { UltraChip } from './UltraChip.tsx'
 import { en, zh, type UltraKey } from './locales.ts'
-import { deepestRankedEffort } from '../ultra-types.ts'
+import type {} from '../ultra-types.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -53,48 +50,8 @@ export interface UltraChipInjected {
   toggle: (off: boolean) => Promise<string | null>
 }
 
-/** Required services: slots, commands Remote, locale, and the session model API. */
-export const inject = ['slots', 'remote', 'remote.commands', 'remote.session', 'locale', 'connection', 'sessions']
-
-/**
- * Mirror the ultra effort pin in the session's own model selection, so the
- * native effort picker shows the tier actually in force instead of the last
- * manual pick. On switch the selection re-submits with the deepest effort the
- * serving model declares; on exit it re-submits without one, restoring the
- * provider default. The request-side pin remains the guarantee — this is
- * display consistency, best-effort after the switch itself.
- * @param ctx - client root context.
- * @param sessionId - the toggled session.
- * @param off - whether ultra mode was just switched off.
- */
-async function syncSelectionEffort(ctx: ClientContext, sessionId: SessionId, off: boolean): Promise<void> {
-  // The client sessions service; the host-side SessionStore merge also keys
-  // 'sessions', so the cast goes through unknown.
-  const sessions = ctx.get('sessions') as unknown as ISessions
-  if (sessions.subagentAddress(sessionId) !== undefined) return
-  const binding = sessions.binding(sessionId)
-  const projected = binding === undefined
-    ? undefined
-    : binding.session.projections.faceOf('modelSelection').getSnapshot() as ModelSelectionProjection | undefined
-  const current = projected?.next ?? projected?.lastUsed
-  if (current === null || current === undefined) return
-  const catalog = await ctx.remote.session.modelCatalog()
-  if (!catalog.ok) throw new Error(`session.modelCatalog failed: ${catalog.error.code}: ${catalog.error.message}`)
-  const efforts = catalog.value.groups
-    .filter(group => group.id === current.provider)
-    .flatMap(group => group.models)
-    .find(model => model.id === current.model)?.reasoning?.efforts
-  const deepest = off || efforts === undefined ? undefined : deepestRankedEffort(efforts)
-  const result = await ctx.remote.session.selectModel({
-    sessionId,
-    provider: current.provider,
-    model: current.model,
-    ...deepest === undefined ? {} : { reasoningEffort: deepest },
-  })
-  if (!result.ok) {
-    throw new Error(`session.selectModel failed: ${result.error.code}: ${result.error.message}`)
-  }
-}
+/** Required services: slot registration, command transport, and locale. */
+export const inject = ['slots', 'remote', 'remote.commands', 'locale']
 
 /**
  * Client plugin body: register the ULTRA chip over the command channel and
@@ -114,17 +71,13 @@ export function apply(ctx: ClientContext): void {
     name: 'conversation.input.right',
     id: 'dsh-ultracode',
     locale: NS,
-      inject: (sessionId: SessionId): UltraChipInjected => ({
-        // Failure strings stay English (error-surface policy: not localized).
-        toggle: async (off: boolean) => {
-          const result = await ctx.remote.commands.execute(sessionId, off ? '/ultra off' : '/ultra', [])
+    inject: (sessionId: SessionId): UltraChipInjected => ({
+      // Failure strings stay English (error-surface policy: not localized).
+      toggle: async (off: boolean) => {
+        const result = await ctx.remote.commands.execute(sessionId, off ? '/ultra off' : '/ultra', [])
         if (!result.ok) return `${result.error.message} (${result.error.code})`
         if (result.value === undefined) return 'unknown command: /ultra'
-        try {
-          await syncSelectionEffort(ctx, sessionId, off)
-        } catch (error: unknown) {
-          return `ultra switched, but the effort picker sync failed: ${error instanceof Error ? error.message : String(error)}`
-        }
+        if (result.value.result.kind === 'error') return result.value.result.text
         return null
       },
     }),

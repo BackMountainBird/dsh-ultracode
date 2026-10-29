@@ -2,7 +2,7 @@
  * The composer ULTRA chip: off-state offers the tier, on-state leaves it.
  * Reads the host-computed `ultra` projection and marks the composer card for
  * the rainbow border while active.
- * @module dsh-ultra/client/UltraChip
+ * @module dsh-ultracode/client/UltraChip
  */
 
 import { useEffect, useRef, useState } from 'react'
@@ -45,9 +45,9 @@ export function UltraChip({ useProjection, toggle, t }: UltraChipProps) {
   useEffect(() => {
     const card = hostRef.current?.closest('[data-composer-card]')
     if (card === null || card === undefined) return
-    if (active) card.setAttribute('data-dsh-ultra', 'on')
-    else card.removeAttribute('data-dsh-ultra')
-    return () => { card.removeAttribute('data-dsh-ultra') }
+    if (active) card.setAttribute('data-dsh-ultracode', 'on')
+    else card.removeAttribute('data-dsh-ultracode')
+    return () => { card.removeAttribute('data-dsh-ultracode') }
   }, [active])
 
   if (ultra === undefined) return null
@@ -70,7 +70,7 @@ export function UltraChip({ useProjection, toggle, t }: UltraChipProps) {
     <span ref={hostRef}>
       <button
         type="button"
-        className="dsh-ultra-chip"
+        className="dsh-ultracode-chip"
         data-state={busy ? 'busy' : active ? 'on' : 'off'}
         aria-label={active ? t('chip.on.aria') : t('chip.off.aria')}
         title={active ? t('chip.on.title') : t('chip.off.title')}
@@ -79,7 +79,7 @@ export function UltraChip({ useProjection, toggle, t }: UltraChipProps) {
       >
         {active ? 'ULTRA' : t('chip.off.label')}
       </button>
-      {error !== null && <span className="dsh-ultra-error" role="alert">{error}</span>}
+      {error !== null && <span className="dsh-ultracode-error" role="alert">{error}</span>}
     </span>
   )
 }
